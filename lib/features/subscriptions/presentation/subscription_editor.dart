@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:subbles/core/localization/app_text.dart';
 import 'package:subbles/core/domain/currency.dart';
 import 'package:subbles/core/domain/day.dart';
 import 'package:subbles/core/domain/recurrence.dart';
 import 'package:subbles/core/format/date_format.dart';
 import 'package:subbles/core/theme/colors.dart';
+import 'package:subbles/core/widgets/bubble_surface.dart';
+import 'package:subbles/core/widgets/service_icon.dart';
 import 'package:subbles/features/subscriptions/application/subscriptions_controller.dart';
 import 'package:subbles/features/subscriptions/domain/subscription.dart';
 import 'package:subbles/features/subscriptions/domain/terms.dart';
@@ -17,7 +20,8 @@ Future<void> openEditor(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
-  backgroundColor: paper,
+  backgroundColor: Colors.transparent,
+  barrierColor: ink.withValues(alpha: .2),
   builder: (_) => SubscriptionEditor(subs, subscription: subscription),
 );
 
@@ -132,8 +136,7 @@ class _SubscriptionEditorState extends State<SubscriptionEditor> {
       if (mounted) {
         setState(() {
           saving = false;
-          failure =
-              'Could not save. Your previous data is unchanged. Please retry.';
+          failure = 'save_failed';
         });
       }
     }
@@ -147,294 +150,312 @@ class _SubscriptionEditorState extends State<SubscriptionEditor> {
       minChildSize: .6,
       maxChildSize: .96,
       expand: false,
-      builder: (context, scroll) => SingleChildScrollView(
-        controller: scroll,
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: form,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: muted.withValues(alpha: .3),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.subscription == null
-                          ? 'Add subscription'
-                          : 'Edit subscription',
-                      style: const TextStyle(
-                        fontSize: 25,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: saving ? null : () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'A little clarity for your recurring costs.',
-                style: TextStyle(color: muted),
-              ),
-              const SizedBox(height: 24),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: serviceIcons
-                    .map(
-                      (value) => InkWell(
-                        onTap: () => setState(() {
-                          icon = value;
-                        }),
-                        borderRadius: BorderRadius.circular(15),
-                        child: Container(
-                          width: 48,
-                          height: 48,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: icon == value ? mint : Colors.white,
-                            borderRadius: BorderRadius.circular(15),
-                            border: Border.all(
-                              color: icon == value
-                                  ? accent
-                                  : Colors.transparent,
-                            ),
-                          ),
-                          child: Text(
-                            value,
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontFamilyFallback: emojiFonts,
-                            ),
-                          ),
+      builder: (context, scroll) => BubbleSheetSurface(
+        child: SingleChildScrollView(
+          controller: scroll,
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: form,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const BubbleSheetHandle(),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppText(
+                        widget.subscription == null
+                            ? 'add_subscription'
+                            : 'edit_subscription',
+                        style: const TextStyle(
+                          fontSize: 25,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 22),
-              TextFormField(
-                controller: name,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  hintText: 'e.g. Apple Music',
+                    ),
+                    IconButton(
+                      onPressed: saving ? null : () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ),
-                maxLength: 60,
-                validator: (v) => v == null || v.trim().isEmpty
-                    ? 'Enter a subscription name'
-                    : null,
-              ),
-              const SizedBox(height: 10),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextFormField(
-                      controller: price,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                const SizedBox(height: 6),
+                const AppText('editor_hint', style: TextStyle(color: muted)),
+                const SizedBox(height: 24),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: serviceIcons
+                      .map(
+                        (value) => InkWell(
+                          onTap: () => setState(() {
+                            icon = value;
+                          }),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            alignment: Alignment.center,
+                            decoration: bubbleSurfaceDecoration(
+                              radius: 16,
+                              color: icon == value ? mint : null,
+                              shadow: false,
+                            ),
+                            child: ServiceGlyph(value, size: 24),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 22),
+                TextFormField(
+                  controller: name,
+                  decoration: InputDecoration(
+                    labelText: context.tr('name'),
+                    hintText: context.tr('name_hint'),
+                  ),
+                  maxLength: 60,
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? context.tr('name_required')
+                      : null,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextFormField(
+                        controller: price,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: context.tr('price'),
+                        ),
+                        validator: (v) {
+                          try {
+                            Currency.get(currency).parse(v ?? '');
+                            return null;
+                          } on FormatException catch (e) {
+                            return e.message.startsWith(
+                                  'Enter a positive amount',
+                                )
+                                ? context.tr(
+                                    'amount_decimals',
+                                    namedArgs: {
+                                      'digits':
+                                          '${Currency.get(currency).digits}',
+                                    },
+                                  )
+                                : context.tr('amount_range');
+                          }
+                        },
                       ),
-                      decoration: const InputDecoration(labelText: 'Price'),
-                      validator: (v) {
-                        try {
-                          Currency.get(currency).parse(v ?? '');
-                          return null;
-                        } on FormatException catch (e) {
-                          return e.message;
-                        }
-                      },
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        borderRadius: BorderRadius.circular(20),
+                        dropdownColor: const Color(0xF5F3F6F0),
+                        initialValue: currency,
+                        decoration: InputDecoration(
+                          labelText: context.tr('currency'),
+                        ),
+                        items: Currency.supported
+                            .map(
+                              (c) => DropdownMenuItem(
+                                value: c.code,
+                                child: Text(c.code),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() {
+                          currency = v!;
+                        }),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                DropdownButtonFormField<String>(
+                  borderRadius: BorderRadius.circular(20),
+                  dropdownColor: const Color(0xF5F3F6F0),
+                  initialValue: frequency,
+                  decoration: InputDecoration(
+                    labelText: context.tr('billing_frequency'),
+                  ),
+                  items: frequencies
+                      .map(
+                        (v) => DropdownMenuItem(
+                          value: v,
+                          child: Text(frequencyText(context, v)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() {
+                    frequency = v!;
+                  }),
+                ),
+                if (frequency == 'Custom interval')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 18),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: interval,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: context.tr('every'),
+                            ),
+                            validator: (v) {
+                              final n = int.tryParse(v ?? '');
+                              return n == null || n < 1 || n > 120
+                                  ? context.tr('interval_range')
+                                  : null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<IntervalUnit>(
+                            borderRadius: BorderRadius.circular(20),
+                            dropdownColor: const Color(0xF5F3F6F0),
+                            initialValue: customUnit,
+                            items: IntervalUnit.values
+                                .map(
+                                  (v) => DropdownMenuItem(
+                                    value: v,
+                                    child: AppText(v.name),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => setState(() {
+                              customUnit = v!;
+                            }),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: currency,
-                      decoration: const InputDecoration(labelText: 'Currency'),
-                      items: Currency.supported
-                          .map(
-                            (c) => DropdownMenuItem(
-                              value: c.code,
-                              child: Text(c.code),
+                const SizedBox(height: 18),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime(date.year, date.month, date.day),
+                      firstDate: widget.subscription == null
+                          ? DateTime(2000)
+                          : DateTime(
+                              widget.subs.today.year,
+                              widget.subs.today.month,
+                              widget.subs.today.day,
                             ),
-                          )
-                          .toList(),
+                      lastDate: DateTime(2200),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        date = Day.fromLocal(picked);
+                      });
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: context.tr('next_payment_date'),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(prettyDay(date, year: true))),
+                        const Icon(Icons.calendar_today_outlined, size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+                if (date < widget.subs.today)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 10),
+                    child: AppText(
+                      'past_date_note',
+                      style: TextStyle(fontSize: 12, color: muted),
+                    ),
+                  ),
+                const SizedBox(height: 18),
+                DropdownButtonFormField<String>(
+                  initialValue: category,
+                  borderRadius: BorderRadius.circular(20),
+                  dropdownColor: const Color(0xF5F3F6F0),
+                  decoration: InputDecoration(
+                    labelText: context.tr('category'),
+                  ),
+                  items: widget.subs.ledger.categories
+                      .map(
+                        (v) => DropdownMenuItem(
+                          value: v,
+                          child: Text(categoryText(context, v)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() {
+                    category = v!;
+                  }),
+                ),
+                const SizedBox(height: 18),
+                TextFormField(
+                  controller: notes,
+                  maxLines: 3,
+                  maxLength: 1000,
+                  decoration: InputDecoration(labelText: context.tr('notes')),
+                ),
+                if (widget.subscription != null)
+                  Container(
+                    decoration: bubbleSurfaceDecoration(radius: 20),
+                    child: SwitchListTile.adaptive(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      title: const AppText('active_subscription'),
+                      subtitle: const AppText('inactive_note'),
+                      value: active,
                       onChanged: (v) => setState(() {
-                        currency = v!;
+                        active = v;
                       }),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              DropdownButtonFormField<String>(
-                initialValue: frequency,
-                decoration: const InputDecoration(
-                  labelText: 'Billing frequency',
-                ),
-                items: frequencies
-                    .map((v) => DropdownMenuItem(value: v, child: Text(v)))
-                    .toList(),
-                onChanged: (v) => setState(() {
-                  frequency = v!;
-                }),
-              ),
-              if (frequency == 'Custom interval')
-                Padding(
-                  padding: const EdgeInsets.only(top: 18),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: interval,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Every'),
-                          validator: (v) {
-                            final n = int.tryParse(v ?? '');
-                            return n == null || n < 1 || n > 120
-                                ? 'Use 1–120'
-                                : null;
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<IntervalUnit>(
-                          initialValue: customUnit,
-                          items: IntervalUnit.values
-                              .map(
-                                (v) => DropdownMenuItem(
-                                  value: v,
-                                  child: Text(v.name),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (v) => setState(() {
-                            customUnit = v!;
-                          }),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 18),
-              InkWell(
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime(date.year, date.month, date.day),
-                    firstDate: widget.subscription == null
-                        ? DateTime(2000)
-                        : DateTime(
-                            widget.subs.today.year,
-                            widget.subs.today.month,
-                            widget.subs.today.day,
-                          ),
-                    lastDate: DateTime(2200),
-                  );
-                  if (picked != null) {
-                    setState(() {
-                      date = Day.fromLocal(picked);
-                    });
-                  }
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Next payment date',
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(prettyDay(date, year: true))),
-                      const Icon(Icons.calendar_today_outlined, size: 20),
-                    ],
-                  ),
-                ),
-              ),
-              if (date < widget.subs.today)
                 const Padding(
-                  padding: EdgeInsets.only(top: 10),
-                  child: Text(
-                    'Past dates will record scheduled payments from this date at the entered price. These are assumed charges, not bank-confirmed payments.',
-                    style: TextStyle(fontSize: 12, color: muted),
+                  padding: EdgeInsets.symmetric(vertical: 10),
+                  child: AppText(
+                    'changes_note',
+                    style: TextStyle(color: muted, fontSize: 12),
                   ),
                 ),
-              const SizedBox(height: 18),
-              DropdownButtonFormField<String>(
-                initialValue: category,
-                decoration: const InputDecoration(labelText: 'Category'),
-                items: widget.subs.ledger.categories
-                    .map((v) => DropdownMenuItem(value: v, child: Text(v)))
-                    .toList(),
-                onChanged: (v) => setState(() {
-                  category = v!;
-                }),
-              ),
-              const SizedBox(height: 18),
-              TextFormField(
-                controller: notes,
-                maxLines: 3,
-                maxLength: 1000,
-                decoration: const InputDecoration(
-                  labelText: 'Notes (optional)',
-                ),
-              ),
-              if (widget.subscription != null)
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Active subscription'),
-                  subtitle: const Text(
-                    'Inactive subscriptions keep their history.',
+                if (failure != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: AppText(
+                      failure!,
+                      style: const TextStyle(color: Colors.deepOrange),
+                    ),
                   ),
-                  value: active,
-                  onChanged: (v) => setState(() {
-                    active = v;
-                  }),
-                ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: Text(
-                  'Changes apply from today. Earlier payments keep their original terms.',
-                  style: TextStyle(color: muted, fontSize: 12),
-                ),
-              ),
-              if (failure != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(
-                    failure!,
-                    style: const TextStyle(color: Colors.deepOrange),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: saving ? null : save,
+                    child: AppText(
+                      saving
+                          ? 'saving'
+                          : widget.subscription == null
+                          ? 'add_subscription'
+                          : 'save_changes',
+                    ),
                   ),
                 ),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: saving ? null : save,
-                  child: Text(
-                    saving
-                        ? 'Saving…'
-                        : widget.subscription == null
-                        ? 'Add subscription'
-                        : 'Save changes',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         ),
       ),

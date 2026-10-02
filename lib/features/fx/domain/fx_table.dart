@@ -26,7 +26,7 @@ class FxTable {
     Day.parse(j['date']),
     DateTime.parse(j['retrievedAt']),
     (j['rates'] as Map<String, dynamic>).map(
-          (k, v) => MapEntry(k, (v as num).toDouble()),
+      (k, v) => MapEntry(k, (v as num).toDouble()),
     ),
   );
 }

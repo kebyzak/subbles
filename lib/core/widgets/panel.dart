@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:subbles/core/theme/colors.dart';
+import 'package:subbles/core/widgets/bubble_surface.dart';
 
 class Panel extends StatelessWidget {
   final Widget child;
@@ -14,11 +14,7 @@ class Panel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: padding,
-    decoration: BoxDecoration(
-      color: color ?? Colors.white,
-      borderRadius: BorderRadius.circular(24),
-      border: Border.all(color: ink.withValues(alpha: .06)),
-    ),
+    decoration: bubbleSurfaceDecoration(color: color),
     child: child,
   );
 }

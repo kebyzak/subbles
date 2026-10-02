@@ -12,7 +12,7 @@ import 'package:subbles/features/subscriptions/domain/subscription.dart';
 abstract interface class LocalStore {
   Future<Ledger> load();
 
-  Future<void> save(Ledger ledger);
+  Future<void> save(Ledger ledger, {required Ledger previous});
 }
 
 class SqliteStore implements LocalStore {
@@ -49,6 +49,30 @@ class SqliteStore implements LocalStore {
       'CREATE TABLE preferences (id TEXT PRIMARY KEY, value TEXT NOT NULL)',
     );
     await db.execute('CREATE TABLE categories (name TEXT PRIMARY KEY)');
+  }
+
+  void syncRows<T>(
+    Batch batch,
+    String table,
+    Map<String, T> previous,
+    Map<String, T> current,
+    Map<String, Object?> Function(String id, T value) encode,
+  ) {
+    for (final id in previous.keys) {
+      if (!current.containsKey(id)) {
+        batch.delete(table, where: 'id = ?', whereArgs: [id]);
+      }
+    }
+
+    for (final entry in current.entries) {
+      if (identical(previous[entry.key], entry.value)) continue;
+
+      batch.insert(
+        table,
+        encode(entry.key, entry.value),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
   }
 
   @override
@@ -93,65 +117,91 @@ class SqliteStore implements LocalStore {
   }
 
   @override
-  Future<void> save(Ledger ledger) => db.transaction((txn) async {
-    final batch = txn.batch();
-    for (final table in [
-      'subscriptions',
-      'revisions',
-      'payments',
-      'fx_cache',
-      'preferences',
-      'categories',
-    ]) {
-      batch.delete(table);
-    }
-    for (final s in ledger.subscriptions.values) {
-      batch.insert('subscriptions', {
-        'id': s.id,
-        'data': jsonEncode(s.toJson()),
+  Future<void> save(Ledger ledger, {required Ledger previous}) =>
+      db.transaction((txn) async {
+        final batch = txn.batch();
+
+        syncRows(
+          batch,
+          'subscriptions',
+          previous.subscriptions,
+          ledger.subscriptions,
+          (id, s) => {'id': id, 'data': jsonEncode(s.toJson())},
+        );
+
+        syncRows(
+          batch,
+          'revisions',
+          {for (final r in previous.revisions) r.id: r},
+          {for (final r in ledger.revisions) r.id: r},
+          (id, r) => {
+            'id': id,
+            'subscription_id': r.subscriptionId,
+            'effective_date': '${r.effective}',
+            'data': jsonEncode(r.toJson()),
+          },
+        );
+
+        syncRows(
+          batch,
+          'payments',
+          previous.history,
+          ledger.history,
+          (id, p) => {
+            'id': id,
+            'subscription_id': p.subscriptionId,
+            'payment_date': '${p.date}',
+            'data': jsonEncode(p.toJson()),
+          },
+        );
+
+        syncRows<FxTable>(
+          batch,
+          'fx_cache',
+          {
+            ...previous.historicalFx,
+            if (previous.latestFx != null) 'latest': previous.latestFx!,
+          },
+          {
+            ...ledger.historicalFx,
+            if (ledger.latestFx != null) 'latest': ledger.latestFx!,
+          },
+          (id, fx) => {'id': id, 'data': jsonEncode(fx.toJson())},
+        );
+
+        if (previous.displayCurrency != ledger.displayCurrency) {
+          batch.insert('preferences', {
+            'id': 'currency',
+            'value': ledger.displayCurrency,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+
+        if (previous.reconciledThrough != ledger.reconciledThrough) {
+          if (ledger.reconciledThrough == null) {
+            batch.delete(
+              'preferences',
+              where: 'id = ?',
+              whereArgs: ['reconciledThrough'],
+            );
+          } else {
+            batch.insert('preferences', {
+              'id': 'reconciledThrough',
+              'value': '${ledger.reconciledThrough}',
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        }
+
+        final oldCategories = previous.categories.toSet();
+        final newCategories = ledger.categories.toSet();
+
+        for (final name in oldCategories.difference(newCategories)) {
+          batch.delete('categories', where: 'name = ?', whereArgs: [name]);
+        }
+
+        for (final name in newCategories.difference(oldCategories)) {
+          batch.insert('categories', {'name': name});
+        }
+
+        await batch.commit(noResult: true);
       });
-    }
-    for (final r in ledger.revisions) {
-      batch.insert('revisions', {
-        'id': r.id,
-        'subscription_id': r.subscriptionId,
-        'effective_date': '${r.effective}',
-        'data': jsonEncode(r.toJson()),
-      });
-    }
-    for (final p in ledger.history.values) {
-      batch.insert('payments', {
-        'id': p.id,
-        'subscription_id': p.subscriptionId,
-        'payment_date': '${p.date}',
-        'data': jsonEncode(p.toJson()),
-      });
-    }
-    if (ledger.latestFx != null) {
-      batch.insert('fx_cache', {
-        'id': 'latest',
-        'data': jsonEncode(ledger.latestFx!.toJson()),
-      });
-    }
-    for (final entry in ledger.historicalFx.entries) {
-      batch.insert('fx_cache', {
-        'id': entry.key,
-        'data': jsonEncode(entry.value.toJson()),
-      });
-    }
-    batch.insert('preferences', {
-      'id': 'currency',
-      'value': ledger.displayCurrency,
-    });
-    if (ledger.reconciledThrough != null) {
-      batch.insert('preferences', {
-        'id': 'reconciledThrough',
-        'value': '${ledger.reconciledThrough}',
-      });
-    }
-    for (final category in ledger.categories) {
-      batch.insert('categories', {'name': category});
-    }
-    await batch.commit(noResult: true);
-  });
 }

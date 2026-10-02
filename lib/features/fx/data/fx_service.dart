@@ -59,6 +59,10 @@ class FxRepository {
     : clock = clock ?? DateTime.now;
 
   Future<FxTable?> request({Day? date}) {
+    final now = clock();
+    _failed.removeWhere(
+      (_, failedAt) => now.difference(failedAt) >= const Duration(minutes: 15),
+    );
     final key = date?.toString() ?? 'latest';
     if (_inflight.containsKey(key)) return _inflight[key]!;
     final failed = _failed[key];
@@ -78,7 +82,11 @@ class FxRepository {
       _failed.remove(key);
       return result;
     } catch (_) {
+      _failed.remove(key);
       _failed[key] = clock();
+      while (_failed.length > 128) {
+        _failed.remove(_failed.keys.first);
+      }
       return null;
     } finally {
       _inflight.remove(key);

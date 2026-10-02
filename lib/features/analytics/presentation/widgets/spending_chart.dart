@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:subbles/core/localization/app_text.dart';
 import 'package:subbles/core/domain/day.dart';
 import 'package:subbles/core/format/date_format.dart';
 import 'package:subbles/core/theme/colors.dart';
@@ -40,8 +41,14 @@ class SpendingChart extends StatelessWidget {
             estimated = spending.projectedGraph[date] ?? 0;
         return Expanded(
           child: Tooltip(
-            message:
-                '${prettyDay(date)}: ${actual.toStringAsFixed(2)} historical + ${estimated.toStringAsFixed(2)} estimated',
+            message: context.tr(
+              'chart_tooltip',
+              namedArgs: {
+                'date': prettyDay(date),
+                'actual': actual.toStringAsFixed(2),
+                'estimated': estimated.toStringAsFixed(2),
+              },
+            ),
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: yearly ? 3 : 1),
               child: Column(
@@ -74,20 +81,9 @@ class SpendingChart extends StatelessWidget {
                     height: 16,
                     child: Text(
                       yearly
-                          ? [
-                              'J',
-                              'F',
+                          ? dateFormatter(
                               'M',
-                              'A',
-                              'M',
-                              'J',
-                              'J',
-                              'A',
-                              'S',
-                              'O',
-                              'N',
-                              'D',
-                            ][entry.key]
+                            ).dateSymbols.NARROWMONTHS[entry.key]
                           : entry.key % 5 == 0 ||
                                 entry.key == buckets.length - 1
                           ? '${date.day}'

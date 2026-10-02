@@ -17,6 +17,20 @@ class SubscriptionsController extends ChangeNotifier {
   bool loading = true;
   String? error;
   Future<void> _writes = Future.value();
+  int dataVersion = 0;
+  int _cachedVersion = -1;
+  Day? _cachedDay;
+  List<Subscription>? _activeCache;
+
+  final _paymentCache = <(Day, Day), List<Payment>>{};
+
+  void prepareCache(Day day) {
+    if (_cachedVersion == dataVersion && _cachedDay == day) return;
+    _cachedVersion = dataVersion;
+    _cachedDay = day;
+    _activeCache = null;
+    _paymentCache.clear();
+  }
 
   SubscriptionsController(this.store, {DateTime Function()? clock})
     : clock = clock ?? DateTime.now;
@@ -26,22 +40,24 @@ class SubscriptionsController extends ChangeNotifier {
   Future<void> initialize() async {
     try {
       ledger = await store.load();
+      dataVersion++;
       await reconcile();
       error = null;
     } catch (_) {
-      error = 'Could not open local data. Retry to keep your data safe.';
+      error = 'storage_open_failed';
     }
     loading = false;
     notifyListeners();
   }
 
-  /// Serialized copy-mutate-save-swap of the ledger.
   Future<void> commit(void Function(Ledger draft) mutate) {
     final task = _writes.then((_) async {
-      final draft = ledger.clone();
+      final previous = ledger;
+      final draft = previous.clone();
       mutate(draft);
-      await store.save(draft);
+      await store.save(draft, previous: previous);
       ledger = draft;
+      dataVersion++;
       notifyListeners();
     });
     _writes = task.then<void>((_) {}, onError: (Object e, StackTrace s) {});
@@ -51,11 +67,39 @@ class SubscriptionsController extends ChangeNotifier {
   Future<void> reconcile() =>
       commit((draft) => Timeline.reconcile(draft, today, clock()));
 
-  List<Subscription> get active =>
-      ledger.subscriptions.values.where((s) => s.terms.active).toList();
+  List<Subscription> get active {
+    prepareCache(today);
 
-  List<Payment> payments(Day from, Day until) =>
-      Timeline.query(ledger, from, until, today, clock());
+    return _activeCache ??= List<Subscription>.unmodifiable(
+      ledger.subscriptions.values.where((s) => s.terms.active),
+    );
+  }
+
+  List<Payment> payments(Day from, Day until) {
+    final now = clock();
+    final day = Day.fromLocal(now);
+    prepareCache(day);
+
+    final key = (from, until);
+    final cached = _paymentCache.remove(key);
+
+    if (cached != null) {
+      _paymentCache[key] = cached;
+      return cached;
+    }
+
+    final result = List<Payment>.unmodifiable(
+      Timeline.query(ledger, from, until, day, now),
+    );
+
+    _paymentCache[key] = result;
+
+    if (_paymentCache.length > 4) {
+      _paymentCache.remove(_paymentCache.keys.first);
+    }
+
+    return result;
+  }
 
   Future<void> saveSubscription(Terms terms, {String? id}) => commit((draft) {
     Timeline.reconcile(draft, today, clock());
@@ -92,6 +136,5 @@ class SubscriptionsController extends ChangeNotifier {
     Timeline.reconcile(draft, today, clock());
     draft.subscriptions.remove(id);
     draft.revisions.removeWhere((r) => r.subscriptionId == id);
-    // Independent historical payment snapshots remain queryable.
   });
 }

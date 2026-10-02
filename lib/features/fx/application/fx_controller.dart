@@ -14,16 +14,33 @@ class FxController extends ChangeNotifier {
 
   FxController(this.subscriptions, this.fx);
 
-  Future<void> selectCurrency(String currency) => subscriptions.commit((draft) {
-    draft.displayCurrency = currency;
-  });
+  Future<void> selectCurrency(String currency) {
+    if (subscriptions.ledger.displayCurrency == currency) {
+      return Future<void>.value();
+    }
+    return subscriptions.commit((draft) => draft.displayCurrency = currency);
+  }
 
   Future<void> refreshFx(List<Payment> payments) {
+    final ledger = subscriptions.ledger;
+
     for (final p in payments) {
-      _queuedPayments[p.id] = p;
+      final needsHistoricalFx =
+          p.historical &&
+          p.currency != ledger.displayCurrency &&
+          !ledger.historicalFx.containsKey('${p.date}');
+
+      if (needsHistoricalFx) _queuedPayments[p.id] = p;
     }
 
-    return _fxTask ??= _refreshFx().whenComplete(() => _fxTask = null);
+    final running = _fxTask;
+    if (running != null) return running;
+
+    if (!fx.stale(ledger.latestFx) && _queuedPayments.isEmpty) {
+      return Future<void>.value();
+    }
+
+    return _fxTask = _refreshFx().whenComplete(() => _fxTask = null);
   }
 
   Future<void> _refreshFx() async {
@@ -57,7 +74,7 @@ class FxController extends ChangeNotifier {
         }
       } while (_queuedPayments.isNotEmpty);
     } catch (_) {
-      error = 'Could not save FX cache. Original amounts are still available.';
+      error = 'fx_save_failed';
     } finally {
       fetchingFx = false;
       notifyListeners();

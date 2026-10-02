@@ -1,162 +1,147 @@
 # Subbles
 
-A personal, local-first Flutter subscription tracker. Home, Calendar, and
-Analytics are the only navigation destinations. No account, backend, bank
-integration, payment processing, or sync. Network requests retrieve FX only.
+[Қазақша](README.kk.md) · **English**
 
-## Run
+A Flutter app for tracking subscriptions, payment schedules, and spending. Data is stored locally in SQLite. Internet access is used to retrieve exchange rates; subscriptions and saved data remain available offline.
 
-Requires Flutter 3.41 / Dart 3.11 or newer and an Android or iOS toolchain.
+The current project targets Android. Accounts, server synchronization, and bank integrations are not implemented.
+
+## Interface
+
+The app has three pages with icon-only bottom navigation.
+
+- **Home:** active subscriptions as draggable bubbles, upcoming payments, a list of all subscriptions, and a `+` button to add a subscription. Each bubble shows the original price, currency, and subscription name.
+- **Calendar:** historical and upcoming payments for a month, day selection, and a total in the chosen display currency.
+- **Analytics:** monthly or yearly spending, a chart, subscription rankings, and category shares. Historical spending and projected spending are shown separately.
+
+The design uses a light background, green accents, and glass surfaces built with transparency, gradients, light borders, and soft shadows. Background blur is not used. The primary font is Plus Jakarta Sans, bundled in `assets/fonts/`.
+
+## Getting started
+
+Use Flutter with a Dart version compatible with the `^3.11.4` constraint in `pubspec.yaml`, and a configured Android SDK. The Android project uses Java 17.
+
+From the project root:
 
 ```sh
 flutter pub get
 flutter run
-flutter analyze
-flutter build apk --debug
 ```
 
-Optional live FX smoke check: `dart run tool/verify_fx.dart` (one current and
-one historical public rate table; no local database changes).
+To assess animation smoothness on a physical device:
 
-SQLite persistence supports Android, iOS, and macOS through `sqflite`. The
-starter web, Windows, and Linux targets are not supported by this mobile V1.
-iOS builds require macOS. No API keys are required.
-
-## Local database and source of truth
-
-The version-1 `subbles.db` database contains independent, indexed records:
-
-| Table | Key / index | Contents |
-| --- | --- | --- |
-| subscriptions | id | Current immutable terms, creation and update timestamps |
-| revisions | id; unique subscription + effective date | Complete terms and original recurrence anchor, effective date, creation timestamp |
-| payments | id; unique subscription + date; date index | Independent historical name/icon/category/frequency/amount/currency snapshots |
-| fx_cache | latest or ISO date | All supported currencies per USD, provider rate date and retrieval timestamp |
-| preferences | id | Display currency and reconciliation watermark |
-| categories | name | Persisted initial categories |
-
-Payloads are JSON within SQLite rows; searchable identities/dates have SQL
-columns and indexes. Schema upgrades belong in the store's SQLite version
-migrations. The small single-user ledger is committed as one SQLite transaction,
-including catch-up history and its watermark. Writes are serialized, and failed
-transactions do not publish changed in-memory state. No foreign key cascades
-can destroy a deleted subscription's history.
-
-Amounts are integer minor units with ISO currency codes. Conversion never changes
-these amounts. `Currency.supported` defines currencies and decimal precision;
-the same registry drives selectors and FX validation.
-
-## Billing rules
-
-- Billing uses `Day` (YYYY-MM-DD); timestamps only describe creation/retrieval.
-  UTC containers perform calendar arithmetic without converting billing dates
-  to instants or applying time-zone offsets.
-- Each recurrence advances from its original anchor. Monthly 31st billing
-  clamps to February's final day and returns to March 31. Yearly February 29
-  returns to February 29 in leap years. Custom intervals use days, weeks, months,
-  or years (1–120). Queries seek directly into the requested range.
-- Dates **before today** are historical. Today and later are projected. A charge
-  scheduled today becomes historical tomorrow. Historical entries are assumed
-  scheduled charges; the app does not verify whether a merchant actually charged.
-- On startup, resume/date rollover, and before any edit/cancellation/deletion,
-  reconciliation materializes elapsed dates using each revision's half-open
-  effective window. Unique subscription/date IDs and insert-if-absent snapshots
-  make reconciliation idempotent, even after months offline.
-- Edits apply today. The final edit on a given calendar date governs that date.
-  Earlier snapshots are immutable. Merely editing a price retains the original
-  billing anchor, including the 31st after February. Explicitly changing date or
-  frequency creates a new anchor. V1 does not schedule future-dated term changes
-  or retroactively edit past financial terms.
-- A new subscription with a past anchor assumes its entered terms applied from
-  that date; the form explains the resulting historical entries. The app cannot
-  infer prices that changed before the subscription was entered.
-- Deactivation stops projections from today and keeps history. Reactivation
-  leaves inactive periods empty. Deletion reconciles first, removes current terms
-  and revisions, and always retains independent historical payments.
-- Future payments are computed only for the queried period and never stored.
-
-## FX and analytics
-
-`FxProvider` is replaceable. `CurrencyApiProvider` uses the free, keyless
-[Currency API](https://github.com/fawazahmed0/exchange-api), with jsDelivr as
-primary and its Cloudflare endpoint as fallback. Each request gets a whole USD
-base table, enabling KZT/USD/EUR cross-conversion with one table per date.
-
-Latest FX is fresh for 24 hours after retrieval. Historical FX is cached
-indefinitely and must match the requested date exactly. Requests are deduplicated
-by date with at most three concurrent historical downloads. Failed dates have
-a 15-minute retry cooldown; repeated failures stop the batch to avoid excessive
-offline requests. Unavailable old dates remain unavailable. Period changes during
-a fetch queue their required dates instead of losing the refresh.
-
-Historical spending uses the payment-date cache; future spending uses latest
-available rates and is labeled estimated. Same-currency values need no FX.
-Missing cross-currency rates are excluded from converted totals, charts, rankings,
-and category shares with an explicit incomplete-data message. Original amounts
-are always available in Calendar. Today's rate is never silently substituted for
-a missing historical rate. FX status includes retrieval time, rate date, and
-cached/stale state. Selecting a display currency persists across restarts and
-recalculates Calendar, Analytics, and Home bubble sizes.
-
-Calendar merges historical rows with current-term projections for the selected
-month. Analytics does the same for a month/year, separating historical spending
-and estimated remaining spending, and grouping chart data by day/month. Rankings
-use converted period contributions; categories use snapshotted historical
-categories and current projected categories.
-
-## Architecture
-
-Feature-first layout. Each feature owns its layers; only the layers it needs
-exist.
-
+```sh
+flutter run --profile
 ```
+
+Build an APK:
+
+```sh
+flutter build apk --release
+```
+
+Release builds currently use the debug signing configuration in `android/app/build.gradle.kts`. Set up your own signing configuration before publishing.
+
+## Languages
+
+Localization uses `easy_localization`. The language selector is on Home, with this order:
+
+1. Қазақша — `kk`.
+2. English — `en`.
+3. Russian — `ru`.
+
+The selected language is saved between launches. On the first launch, the app uses a supported device language, with English as the fallback.
+
+```text
+assets/translations/
+├── kk.json
+├── en.json
+└── ru.json
+```
+
+Interface text, built-in categories, recurrence labels, messages, and dates are localized. User-entered subscription names and notes are preserved. Translation keys must match across all three files; strings containing counts use plural forms.
+
+Shared configuration and the `AppText` widget are in `lib/core/localization/app_text.dart`; the selector is in `language_selector.dart`. Add new strings to the JSON files and display them with `AppText('key')` or `context.tr('key')`.
+
+After changing dependencies or asset declarations in `pubspec.yaml`, run `flutter pub get` and fully restart the app.
+
+## Subscriptions and payment history
+
+A subscription stores its name, icon, price, currency, category, notes, payment date, and recurrence. Weekly, monthly, yearly, and custom intervals are supported. Custom intervals range from 1 to 120 days, weeks, months, or years.
+
+- Schedules use calendar dates, so time-zone offsets do not shift payment dates.
+- Monthly billing on the 31st uses the last day of shorter months, then returns to the original day. Yearly billing on February 29 follows the same principle.
+- Dates before today are historical; today and later are projected. A payment scheduled today becomes historical tomorrow.
+- History follows the saved schedule. Entries represent assumed charges, without bank confirmation.
+- Changes take effect today. Earlier payments retain their original amounts, currencies, and terms. Changing only the price preserves the original recurrence anchor.
+- Adding a subscription with a past date creates history from that date using the entered terms.
+- Deactivation stops future payments and retains history. Deletion also retains historical payments in Calendar and Analytics.
+- Future payments are calculated for the selected period and are not stored as completed payments.
+
+Missing historical entries are added on startup, day rollover, app resume, and before subscription changes. Reprocessing does not create duplicates.
+
+## Currencies and calculations
+
+Supported currencies are **KZT, USD, and EUR**. Amounts are stored as integer minor units. Conversion never changes the original subscription price.
+
+The display currency can be selected in Calendar and Analytics. This shared preference persists between launches. Bubble sizes on Home are compared using converted amounts, while bubble labels retain the original currencies.
+
+Rates come from the [Currency API](https://github.com/fawazahmed0/exchange-api), using jsDelivr as the primary endpoint and Cloudflare as the fallback. No API key is required.
+
+- The latest rate is considered fresh for 24 hours after retrieval and is used for projections.
+- Historical payments use the saved rate for their payment date. Historical rates must exactly match the requested date.
+- If a rate is missing, the original amount remains visible and converted totals are marked incomplete. Today's rate is never substituted for a missing historical rate.
+- Requests for the same date are deduplicated. At most three historical rates are downloaded concurrently. Failed requests have a 15-minute retry cooldown.
+
+## Data storage
+
+The database is `subbles.db`, schema version 1. Records contain JSON payloads, with identifiers and dates also represented by SQL columns and indexes.
+
+| Table | Contents |
+| --- | --- |
+| `subscriptions` | Current subscription terms |
+| `revisions` | Changes to subscription terms |
+| `payments` | Independent historical payment snapshots |
+| `fx_cache` | Latest and historical exchange rates |
+| `preferences` | Display currency and history reconciliation date |
+| `categories` | Subscription categories |
+
+Writes are serialized through one transaction queue. Changed state is published only after successful persistence. The language preference is saved separately by `easy_localization`.
+
+## App icon and splash screen
+
+The source logo is `assets/logo.png`. Prepared Android resources are in `android/app/src/main/res/`:
+
+- `mipmap-mdpi` … `mipmap-xxxhdpi`: launcher icons for different screen densities and adaptive foreground images.
+- `mipmap-anydpi-v26/ic_launcher.xml`: adaptive launcher icon.
+- `drawable-mdpi` … `drawable-xxxhdpi`: splash logo images.
+- `drawable/launch_background.xml` and `drawable-v21/launch_background.xml`: launch screens for older Android versions.
+- `values-v31/styles.xml` and `values-night-v31/styles.xml`: Android 12+ system splash configuration.
+
+The light background uses `brand_background` from `values/colors.xml`. Prepared images include padding for the system icon mask.
+
+The app uses these prepared resources. Replacing only `assets/logo.png` does not update them automatically: regenerate the corresponding images when changing the logo. Check the icon and native splash after building and installing a new version; hot reload does not update them.
+
+## Project structure
+
+```text
 lib/
-├── main.dart                 # entry point, calls bootstrap()
-├── app/
-│   ├── bootstrap.dart        # builds store, controllers, runs the app
-│   ├── app.dart              # MainApp (MaterialApp)
-│   └── app_shell.dart        # tab navigation, day rollover, lifecycle
-├── core/                     # shared, never imports features/
-│   ├── domain/               # Day, Currency, Recurrence
-│   ├── format/               # money and date formatting
-│   ├── theme/                # colors.dart, app_theme.dart
-│   └── widgets/              # Panel, SectionTitle, EmptyState, ServiceIcon, showError
+├── main.dart
+├── app/                    # startup, MaterialApp, navigation, lifecycle
+├── core/
+│   ├── domain/             # calendar dates, currencies, recurrence
+│   ├── format/             # amount and date formatting
+│   ├── localization/       # languages, translations, selector
+│   ├── theme/              # palette and theme
+│   └── widgets/            # shared interface components
 └── features/
-    ├── subscriptions/        # core aggregate
-    │   ├── domain/           # Subscription, Terms, Revision, Payment, Ledger, Timeline
-    │   ├── data/             # LocalStore, SqliteStore
-    │   ├── application/      # SubscriptionsController
-    │   └── presentation/     # editor, details sheet, PaymentRow, formatters
-    ├── fx/
-    │   ├── domain/           # FxTable
-    │   ├── data/             # FxProvider, CurrencyApiProvider, FxRepository
-    │   ├── application/      # FxController
-    │   └── presentation/     # CurrencySelector, FxNote
-    ├── home/                 # bubble field, collision physics, home screen
-    ├── calendar/             # calendar screen
-    └── analytics/            # Spending aggregation, analytics screen, chart
+    ├── subscriptions/      # models, SQLite, controller, editor, details
+    ├── fx/                 # exchange rate retrieval and caching
+    ├── home/               # Home, bubbles, collision physics
+    ├── calendar/           # payment calendar
+    └── analytics/          # spending calculations and visualization
 ```
 
-Rules:
+`SubscriptionsController` owns the data and write queue. `FxController` manages exchange rate retrieval and display currency selection, persisting changes through the same subscriptions controller. `Spending` calculates spending; `Timeline` handles schedules and history.
 
-- `core/` does not import `features/`.
-- A feature may import `core/` and other features' public files. `domain/` stays
-  free of Flutter widgets, `presentation/` and `application/`.
-- Imports use `package:subbles/...`.
+Tabs are created on first use and retain their state. Bubble animation stops when motion settles, the tab is hidden, or the app is in the background. The bubble field and bubble contents have separate repaint boundaries. Long lists create rows lazily; period calculations and formatters are cached.
 
-### Controllers
-
-- `SubscriptionsController` owns the `Ledger` and every write to `LocalStore`:
-  initialization, reconciliation, save/deactivate/delete. Mutations go through
-  the serialized `commit(mutate)`, which copies the ledger, mutates the copy,
-  saves it, then publishes it.
-- `FxController` takes a `SubscriptionsController` and an `FxRepository`. It owns
-  FX fetching state (`fetchingFx`, `cachedFx`, `error`), the queued refresh of
-  required dates, and display-currency selection. It persists only through
-  `SubscriptionsController.commit`, so there is a single write queue.
-- `Ledger.convert(payment, currency)` converts a payment using the ledger's
-  historical or latest FX table; `Spending` aggregates on top of it.
-- Screens that need both controllers listen with
-  `Listenable.merge([subs, fx])`.
-
-`tool/verify_fx.dart` is a standalone live FX check and is not part of the app.

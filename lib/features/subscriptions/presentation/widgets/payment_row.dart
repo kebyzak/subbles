@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:subbles/core/localization/app_text.dart';
 import 'package:subbles/core/format/date_format.dart';
 import 'package:subbles/features/subscriptions/presentation/formatters.dart';
 import 'package:subbles/core/format/money_format.dart';
@@ -36,13 +37,13 @@ class PaymentRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${prettyDay(payment.date)} · ${payment.snapshot.recurrence.label}',
+                    '${prettyDay(payment.date)} · ${recurrenceText(context, payment.snapshot.recurrence)}',
                     style: const TextStyle(fontSize: 11, color: muted),
                   ),
-                  Text(
+                  AppText(
                     payment.historical
-                        ? 'Historical · recorded schedule'
-                        : 'Projected · estimate',
+                        ? 'historical_schedule'
+                        : 'projected_estimate',
                     style: TextStyle(
                       fontSize: 10,
                       color: payment.historical ? accent : muted,
@@ -65,7 +66,7 @@ class PaymentRow extends StatelessWidget {
                 if (payment.currency != subs.ledger.displayCurrency)
                   Text(
                     converted == null
-                        ? 'FX unavailable'
+                        ? context.tr('fx_unavailable')
                         : '${payment.historical ? '' : '~'}${money(converted, subs.ledger.displayCurrency)}',
                     style: const TextStyle(fontSize: 10, color: muted),
                   ),

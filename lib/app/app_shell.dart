@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:subbles/core/localization/app_text.dart';
+import 'package:flutter/services.dart';
 import 'package:subbles/core/domain/day.dart';
 import 'package:subbles/core/theme/colors.dart';
 import 'package:subbles/core/widgets/show_error.dart';
+import 'package:subbles/core/widgets/bubble_surface.dart';
 import 'package:subbles/features/analytics/presentation/analytics_screen.dart';
 import 'package:subbles/features/calendar/presentation/calendar_screen.dart';
 import 'package:subbles/features/fx/application/fx_controller.dart';
@@ -25,6 +28,41 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int tab = 0;
   Timer? rollover;
   late Day lastDay;
+  final _pages = <Widget?>[null, null, null];
+  final _pageUpdates = List.generate(3, (_) => ValueNotifier<int>(0));
+  bool _checkingDay = false;
+
+  void onSubscriptionsChanged() => _pageUpdates[tab].value++;
+
+  Widget pageAt(int index) => _pages[index] ??= ListenableBuilder(
+    listenable: _pageUpdates[index],
+    builder: (context, _) {
+      final page = switch (index) {
+        0 => HomeScreen(widget.subs),
+        1 => CalendarScreen(widget.subs, widget.fx, active: tab == index),
+        _ => AnalyticsScreen(widget.subs, widget.fx, active: tab == index),
+      };
+
+      return Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: index == 0 ? double.infinity : 760,
+          ),
+          child: page,
+        ),
+      );
+    },
+  );
+
+  void selectTab(int value) {
+    if (value == tab) return;
+
+    final previous = tab;
+    setState(() => tab = value);
+
+    _pageUpdates[previous].value++;
+    _pageUpdates[value].value++;
+  }
 
   @override
   void initState() {
@@ -35,35 +73,49 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.subs.error == null) widget.fx.refreshFx([]);
     });
+    widget.subs.addListener(onSubscriptionsChanged);
   }
 
   Future<void> checkDay() async {
-    if (widget.subs.today == lastDay) return;
+    if (_checkingDay || widget.subs.today == lastDay) return;
+
+    _checkingDay = true;
+
     try {
+      final day = widget.subs.today;
       await widget.subs.reconcile();
-      lastDay = widget.subs.today;
+      lastDay = day;
     } catch (_) {
       if (mounted) {
-        showError(context, 'Could not record scheduled history. Please retry.');
+        showError(context, 'history_record_failed');
       }
+    } finally {
+      _checkingDay = false;
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) checkDay();
+    if (state == AppLifecycleState.resumed) {
+      checkDay();
+      _pageUpdates[tab].value++;
+    }
   }
 
   @override
   void dispose() {
     rollover?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    widget.subs.removeListener(onSubscriptionsChanged);
+    for (final notifier in _pageUpdates) {
+      notifier.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([widget.subs, widget.fx]),
+    listenable: widget.subs,
     builder: (context, _) {
       final c = widget.subs;
       if (c.loading) {
@@ -77,11 +129,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(c.error!, textAlign: TextAlign.center),
+                  AppText(c.error!, textAlign: TextAlign.center),
                   const SizedBox(height: 20),
                   FilledButton(
                     onPressed: c.initialize,
-                    child: const Text('Retry local storage'),
+                    child: const AppText('storage_retry'),
                   ),
                 ],
               ),
@@ -89,52 +141,108 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           ),
         );
       }
-      return Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: tab == 0 ? double.infinity : 760,
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+          systemNavigationBarColor: bubbleCanvas,
+          systemNavigationBarIconBrightness: Brightness.dark,
+        ),
+        child: Scaffold(
+          extendBody: true,
+          body: Stack(
+            children: [
+              const Positioned.fill(child: BubbleBackdrop()),
+              SafeArea(
+                child: IndexedStack(
+                  index: tab,
+                  children: [
+                    for (var i = 0; i < 3; i++)
+                      TickerMode(
+                        enabled: i == tab,
+                        child: _pages[i] != null || i == tab
+                            ? pageAt(i)
+                            : const SizedBox.shrink(),
+                      ),
+                  ],
+                ),
               ),
-              child: switch (tab) {
-                0 => HomeScreen(c, widget.fx),
-                1 => CalendarScreen(c, widget.fx),
-                _ => AnalyticsScreen(c, widget.fx),
-              },
+            ],
+          ),
+          floatingActionButton: tab == 0
+              ? Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF344D42), ink],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: .25),
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x4420362F),
+                        blurRadius: 26,
+                        spreadRadius: -4,
+                        offset: Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: FloatingActionButton(
+                    tooltip: context.tr('add_subscription'),
+                    backgroundColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    highlightElevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    onPressed: () => openEditor(context, c),
+                    child: const Icon(Icons.add_rounded, size: 26),
+                  ),
+                )
+              : null,
+          bottomNavigationBar: SafeArea(
+            top: false,
+            minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: DecoratedBox(
+              decoration: bubbleSurfaceDecoration(radius: 100),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(100),
+                child: NavigationBar(
+                  height: 64,
+                  labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+                  backgroundColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  elevation: 0,
+                  selectedIndex: tab,
+                  onDestinationSelected: selectTab,
+                  destinations: [
+                    NavigationDestination(
+                      icon: const Icon(Icons.bubble_chart_outlined, size: 26),
+                      selectedIcon: const Icon(Icons.bubble_chart, size: 26),
+                      label: context.tr('home'),
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.calendar_month_outlined, size: 26),
+                      selectedIcon: const Icon(Icons.calendar_month, size: 26),
+                      label: context.tr('calendar'),
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.bar_chart_outlined, size: 26),
+                      selectedIcon: const Icon(Icons.bar_chart, size: 26),
+                      label: context.tr('analytics'),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-        floatingActionButton: tab == 0
-            ? FloatingActionButton(
-                tooltip: 'Add subscription',
-                backgroundColor: ink,
-                foregroundColor: Colors.white,
-                onPressed: () => openEditor(context, c),
-                child: const Icon(Icons.add),
-              )
-            : null,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: tab,
-          onDestinationSelected: (value) => setState(() {
-            tab = value;
-          }),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.bubble_chart_outlined),
-              selectedIcon: Icon(Icons.bubble_chart),
-              label: 'Home',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.calendar_month_outlined),
-              selectedIcon: Icon(Icons.calendar_month),
-              label: 'Calendar',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.bar_chart_outlined),
-              selectedIcon: Icon(Icons.bar_chart),
-              label: 'Analytics',
-            ),
-          ],
         ),
       );
     },
