@@ -11,7 +11,6 @@ Requires Flutter 3.41 / Dart 3.11 or newer and an Android or iOS toolchain.
 ```sh
 flutter pub get
 flutter run
-flutter test
 flutter analyze
 flutter build apk --debug
 ```
@@ -105,19 +104,59 @@ and estimated remaining spending, and grouping chart data by day/month. Rankings
 use converted period contributions; categories use snapshotted historical
 categories and current projected categories.
 
-## Code and verification
+## Architecture
 
-- `lib/domain/`: dates, recurrence, money, immutable models, reconciliation,
-  range queries, conversion and aggregation; independent of widgets/storage.
-- `lib/data/`: SQLite transaction store and FX provider/repository.
-- `lib/app_controller.dart`: serialized mutations, reconciliation, persisted
-  preference and queued FX updates.
-- `lib/ui/`: three screens, add/edit/details sheets and bounded collision physics.
-- `test/`: recurrence boundaries, dated term changes, cancellations/deletions,
-  offline/restart behavior, mixed historical/projected periods, FX correctness,
-  SQLite round-trip/rollback, phone layouts and form/bubble interactions.
+Feature-first layout. Each feature owns its layers; only the layers it needs
+exist.
 
-Widget tests use disposable sample data only; the real app starts empty. They
-write review images to `build/previews/`. On Windows the test renderer optionally
-loads local fonts for readable images. No demo payments or fabricated FX rates
-are inserted into a real device database.
+```
+lib/
+├── main.dart                 # entry point, calls bootstrap()
+├── app/
+│   ├── bootstrap.dart        # builds store, controllers, runs the app
+│   ├── app.dart              # MainApp (MaterialApp)
+│   └── app_shell.dart        # tab navigation, day rollover, lifecycle
+├── core/                     # shared, never imports features/
+│   ├── domain/               # Day, Currency, Recurrence
+│   ├── format/               # money and date formatting
+│   ├── theme/                # colors.dart, app_theme.dart
+│   └── widgets/              # Panel, SectionTitle, EmptyState, ServiceIcon, showError
+└── features/
+    ├── subscriptions/        # core aggregate
+    │   ├── domain/           # Subscription, Terms, Revision, Payment, Ledger, Timeline
+    │   ├── data/             # LocalStore, SqliteStore
+    │   ├── application/      # SubscriptionsController
+    │   └── presentation/     # editor, details sheet, PaymentRow, formatters
+    ├── fx/
+    │   ├── domain/           # FxTable
+    │   ├── data/             # FxProvider, CurrencyApiProvider, FxRepository
+    │   ├── application/      # FxController
+    │   └── presentation/     # CurrencySelector, FxNote
+    ├── home/                 # bubble field, collision physics, home screen
+    ├── calendar/             # calendar screen
+    └── analytics/            # Spending aggregation, analytics screen, chart
+```
+
+Rules:
+
+- `core/` does not import `features/`.
+- A feature may import `core/` and other features' public files. `domain/` stays
+  free of Flutter widgets, `presentation/` and `application/`.
+- Imports use `package:subbles/...`.
+
+### Controllers
+
+- `SubscriptionsController` owns the `Ledger` and every write to `LocalStore`:
+  initialization, reconciliation, save/deactivate/delete. Mutations go through
+  the serialized `commit(mutate)`, which copies the ledger, mutates the copy,
+  saves it, then publishes it.
+- `FxController` takes a `SubscriptionsController` and an `FxRepository`. It owns
+  FX fetching state (`fetchingFx`, `cachedFx`, `error`), the queued refresh of
+  required dates, and display-currency selection. It persists only through
+  `SubscriptionsController.commit`, so there is a single write queue.
+- `Ledger.convert(payment, currency)` converts a payment using the ledger's
+  historical or latest FX table; `Spending` aggregates on top of it.
+- Screens that need both controllers listen with
+  `Listenable.merge([subs, fx])`.
+
+`tool/verify_fx.dart` is a standalone live FX check and is not part of the app.
